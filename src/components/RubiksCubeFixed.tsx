@@ -2,26 +2,32 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, Html } from '@react-three/drei'
+import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 
 // Fixed draggable control panel component
-function DraggableControlPanel({ children, initialPosition = { x: 20, y: 20 } }) {
-  const [position, setPosition] = useState(initialPosition)
+interface DraggableControlPanelProps {
+  children: React.ReactNode;
+  initialPosition?: { x: number; y: number };
+}
+
+function DraggableControlPanel({ children, initialPosition = { x: 20, y: 20 } }: DraggableControlPanelProps) {
+  const [position, setPosition] = useState<{ x: number; y: number }>(initialPosition)
   const [isDragging, setIsDragging] = useState(false)
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const panelRef = useRef<HTMLDivElement>(null)
   const dragStateRef = useRef(false)
 
-  const handleMouseDown = useCallback((e) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     // Only allow dragging from the header area or non-interactive elements
-    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return
+    if ((e.target as HTMLElement).tagName === 'BUTTON' || (e.target as HTMLElement).closest('button')) return
     
     e.preventDefault()
     e.stopPropagation()
     
     setIsDragging(true)
     dragStateRef.current = true
+    if (!panelRef.current) return;
     const rect = panelRef.current.getBoundingClientRect()
     setDragOffset({
       x: e.clientX - rect.left,
@@ -36,7 +42,7 @@ function DraggableControlPanel({ children, initialPosition = { x: 20, y: 20 } })
     document.addEventListener('selectstart', preventDefaultEvent, { passive: false })
   }, [])
 
-  const handleMouseMove = useCallback((e) => {
+  const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!dragStateRef.current || !panelRef.current) return
     
     e.preventDefault()
@@ -60,7 +66,7 @@ function DraggableControlPanel({ children, initialPosition = { x: 20, y: 20 } })
     })
   }, [dragOffset])
 
-  const handleMouseUp = useCallback((e) => {
+  const handleMouseUp = useCallback(() => {
     if (!dragStateRef.current) return
     
     setIsDragging(false)
@@ -96,8 +102,8 @@ function DraggableControlPanel({ children, initialPosition = { x: 20, y: 20 } })
   }, [position])
 
   // Helper function to prevent default
-  const preventDefaultEvent = (e: Event) => {
-    e.preventDefault()
+  const preventDefaultEvent = (e?: Event) => {
+    if (e) e.preventDefault()
     return false
   }
   
@@ -157,18 +163,25 @@ const COLORS = {
 }
 
 // Individual cube piece component
+interface CubePieceProps {
+  position: [number, number, number];
+  colors: string[];
+  onClick: () => void;
+  isSelected: boolean;
+  rotation: [number, number, number];
+}
+
 function CubePiece({ 
   position, 
   colors, 
   onClick, 
   isSelected, 
-  rotation,
-  groupRef
-}) {
+  rotation
+}: CubePieceProps) {
   const meshRef = useRef<THREE.Mesh>(null)
   const [hovered, setHovered] = useState(false)
 
-  useFrame((state, delta) => {
+  useFrame(() => {
     if (meshRef.current) {
       meshRef.current.scale.setScalar(hovered ? 1.05 : 1)
       // Apply the rotation to the individual cubelet
@@ -189,7 +202,7 @@ function CubePiece({
       receiveShadow
     >
       <boxGeometry args={[0.95, 0.95, 0.95]} />
-      {colors.map((color, index) => (
+      {colors.map((color: string, index: number) => (
         <meshStandardMaterial
           key={index}
           attach={`material-${index}`}
@@ -205,7 +218,7 @@ function CubePiece({
 }
 
 // Utility functions for cube rotation
-const rotatePosition = (pos, axis, clockwise) => {
+const rotatePosition = (pos: [number, number, number], axis: string, clockwise: boolean) => {
   const [x, y, z] = pos
   
   switch (axis) {
@@ -221,7 +234,7 @@ const rotatePosition = (pos, axis, clockwise) => {
 }
 
 // Color rotation function synchronized with rotatePosition
-const rotateColors = (colors, axis, clockwise) => {
+const rotateColors = (colors: string[], axis: string, clockwise: boolean) => {
   const newColors = [...colors]
   
   switch (axis) {
@@ -276,18 +289,30 @@ const rotateColors = (colors, axis, clockwise) => {
 }
 
 // Main Rubik's cube component
+interface CubePieceState {
+  id: string;
+  position: [number, number, number];
+  colors: string[];
+  rotation: [number, number, number];
+  animationRotation: [number, number, number];
+}
+
+type Face = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom';
+interface ShuffleMove {
+  face: Face;
+  clockwise: boolean;
+}
+
 function RubiksCubeScene() {
-  const [selectedPiece, setSelectedPiece] = useState(null)
+  const [selectedPiece, setSelectedPiece] = useState<string | null>(null)
   const [isAnimating, setIsAnimating] = useState(false)
   const [isShuffling, setIsShuffling] = useState(false)
-  const [shuffleTimeouts, setShuffleTimeouts] = useState([])
-  const groupRef = useRef<THREE.Group>(null)
-  const layerGroupsRef = useRef({})
+  const [shuffleTimeouts, setShuffleTimeouts] = useState<ReturnType<typeof setTimeout>[]>([])
   const shuffleActiveRef = useRef(false)
 
   // Initialize the cube state
-  const initializeCube = () => {
-    const pieces = []
+  const initializeCube = useCallback((): CubePieceState[] => {
+    const pieces: CubePieceState[] = []
     for (let x = -1; x <= 1; x++) {
       for (let y = -1; y <= 1; y++) {
         for (let z = -1; z <= 1; z++) {
@@ -311,21 +336,21 @@ function RubiksCubeScene() {
       }
     }
     return pieces
-  }
+  }, [])
 
-  const [cubeState, setCubeState] = useState(initializeCube())
+  const [cubeState, setCubeState] = useState<CubePieceState[]>(() => initializeCube())
 
   // Rotate a face with smooth 90-degree animation
-  const rotateFace = (face, clockwise = true) => {
+  const rotateFace = useCallback((face: Face, clockwise: boolean = true) => {
     if (isAnimating) return
     
     setIsAnimating(true)
     const newState = [...cubeState]
     
     // Get the pieces that belong to this face
-    const rotatingPieces = []
-    const originalPositions = []
-    const originalRotations = []
+    const rotatingPieces: CubePieceState[] = []
+    const originalPositions: [number, number, number][] = []
+    const originalRotations: [number, number, number][] = []
     
     newState.forEach(piece => {
       const [x, y, z] = piece.position
@@ -354,8 +379,8 @@ function RubiksCubeScene() {
       
       if (shouldRotate) {
         rotatingPieces.push(piece)
-        originalPositions.push([...piece.position])
-        originalRotations.push([...piece.rotation])
+        originalPositions.push([...piece.position] as [number, number, number])
+        originalRotations.push([...piece.rotation] as [number, number, number])
       }
     })
     
@@ -364,7 +389,7 @@ function RubiksCubeScene() {
     const startTime = performance.now()
     const totalAngle = Math.PI / 2 // Exactly 90 degrees
     
-    const animate = (currentTime) => {
+    const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime
       const progress = Math.min(elapsed / animationDuration, 1)
 
@@ -376,7 +401,7 @@ function RubiksCubeScene() {
         // Apply rotation to each piece
         rotatingPieces.forEach((piece, index) => {
           const [origX, origY, origZ] = originalPositions[index]
-          let newPos = [origX, origY, origZ]
+          let newPos: [number, number, number] = [origX, origY, origZ]
           
           switch (face) {
             case 'front':
@@ -412,9 +437,9 @@ function RubiksCubeScene() {
               case 'bottom':
                 if (Math.round(origY) === -1) {
                   newPos = [
-                    Math.cos(currentAngle) * origX + Math.sin(currentAngle) * origZ, // CHANGE from -currentAngle to currentAngle
+                    Math.cos(currentAngle) * origX + Math.sin(currentAngle) * origZ,
                     origY,
-                    -Math.sin(currentAngle) * origX + Math.cos(currentAngle) * origZ // CHANGE from -currentAngle to currentAngle
+                    -Math.sin(currentAngle) * origX + Math.cos(currentAngle) * origZ
                   ]
                 }
                 break;
@@ -455,7 +480,7 @@ function RubiksCubeScene() {
             piece.rotation = [origRx, origRy + currentAngle, origRz]
             break
           case 'bottom':
-            piece.rotation = [origRx, origRy + currentAngle, origRz] // CHANGE from -currentAngle to +currentAngle
+            piece.rotation = [origRx, origRy + currentAngle, origRz]
             break
           case 'right':
             piece.rotation = [origRx + currentAngle, origRy, origRz]
@@ -474,7 +499,7 @@ function RubiksCubeScene() {
         const [origX, origY, origZ] = originalPositions[index]
         
         // Update position using the rotation logic
-        piece.position = rotatePosition([origX, origY, origZ], getAxisForFace(face), clockwise)
+        piece.position = rotatePosition([origX, origY, origZ], getAxisForFace(face), clockwise) as [number, number, number]
         
         // Rotate colors by exactly 90 degrees based on the face being rotated
         // For top and bottom faces, invert the direction to match the visual animation
@@ -486,7 +511,7 @@ function RubiksCubeScene() {
       })
       
       // Helper function to get axis for face
-      function getAxisForFace(face: string) {
+      function getAxisForFace(face: Face): 'x' | 'y' | 'z' {
         switch (face) {
           case 'front':
           case 'back':
@@ -508,35 +533,34 @@ function RubiksCubeScene() {
   }
 
   requestAnimationFrame(animate)
-  }
+  }, [cubeState, isAnimating])
 
   // Enhanced stop function
-  const stopShuffle = () => {
+  const stopShuffle = useCallback(() => {
     if (shuffleTimeouts.length > 0) {
       shuffleTimeouts.forEach(timeoutId => clearTimeout(timeoutId))
       setShuffleTimeouts([])
     }
     shuffleActiveRef.current = false
     setIsShuffling(false)
-  }
+  }, [shuffleTimeouts])
 
   // Fixed shuffle function with proper state management
-  const shuffleCube = () => {
+  const shuffleCube = useCallback(() => {
     if (isShuffling || isAnimating) return
     
-    console.log('Starting shuffle...') // Debug log
     setIsShuffling(true)
     shuffleActiveRef.current = true
-    const faces = ['front', 'back', 'top', 'bottom', 'right', 'left']
+    const faces: Face[] = ['front', 'back', 'top', 'bottom', 'right', 'left']
     const shuffleMoves = 20 // 20+ random legal twists
-    const timeouts = []
+    const timeouts: ReturnType<typeof setTimeout>[] = []
     
     // Generate random moves avoiding redundant moves
-    const moves = []
-    let lastFace = null
+    const moves: ShuffleMove[] = []
+    let lastFace: Face | null = null
     
     for (let i = 0; i < shuffleMoves; i++) {
-      let randomFace
+      let randomFace: Face
       // Avoid same face twice in a row for better scrambling
       do {
         randomFace = faces[Math.floor(Math.random() * faces.length)]
@@ -547,57 +571,55 @@ function RubiksCubeScene() {
       lastFace = randomFace
     }
     
-    console.log('Generated moves:', moves) // Debug log
-    
-    // Execute moves with proper timing and animation
     let completedMoves = 0
     
     moves.forEach((move, i) => {
       const timeoutId = setTimeout(() => {
         // Check if shuffle is still active using ref
         if (shuffleActiveRef.current) {
-          console.log(`Executing move ${i + 1}/${shuffleMoves}:`, move) // Debug log
-          rotateFace(move.face, move.clockwise) // This handles animation AND color updates
+          rotateFace(move.face, move.clockwise)
           completedMoves++
           
           // Check if this was the last move
           if (completedMoves === shuffleMoves) {
             setTimeout(() => {
-              console.log('Shuffle complete!') // Debug log
               setIsShuffling(false)
               setShuffleTimeouts([])
               shuffleActiveRef.current = false
             }, 600) // Wait for last animation to complete
           }
         }
-      }, i * 600) // Slightly faster for better UX
+      }, i * 600)
       timeouts.push(timeoutId)
     })
     
     setShuffleTimeouts(timeouts)
-  }
+  }, [isShuffling, isAnimating, rotateFace])
 
   // Reset the cube
-  const resetCube = () => {
+  const resetCube = useCallback(() => {
     setCubeState(initializeCube())
-  }
+  }, [initializeCube])
 
   // Expose functions to window for external control panel
   useEffect(() => {
-    (window as any).rotateFace = rotateFace
-    ;(window as any).shuffleCube = shuffleCube
-    ;(window as any).stopShuffle = stopShuffle
-    ;(window as any).resetCube = resetCube
-    ;(window as any).isAnimating = isAnimating
-    ;(window as any).isShuffling = isShuffling
+    // Cast window to any once
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const win = window as any;
+    win.rotateFace = rotateFace;
+    win.shuffleCube = shuffleCube;
+    win.stopShuffle = stopShuffle;
+    win.resetCube = resetCube;
+    win.isAnimating = isAnimating;
+    win.isShuffling = isShuffling;
     
     return () => {
-      delete (window as any).rotateFace
-      delete (window as any).shuffleCube
-      delete (window as any).stopShuffle
-      delete (window as any).resetCube
-      delete (window as any).isAnimating
-      delete (window as any).isShuffling
+      delete win.rotateFace;
+      delete win.shuffleCube;
+      delete win.stopShuffle;
+      delete win.resetCube;
+      delete win.isAnimating;
+      delete win.isShuffling;
     }
   }, [rotateFace, shuffleCube, stopShuffle, resetCube, isAnimating, isShuffling])
 
@@ -626,7 +648,7 @@ function RubiksCubeScene() {
         castShadow 
       />
       
-      <group ref={groupRef}>
+      <group>
         {cubeState.map((piece) => (
           <CubePiece
             key={piece.id}
@@ -635,7 +657,6 @@ function RubiksCubeScene() {
             onClick={() => setSelectedPiece(piece.id)}
             isSelected={selectedPiece === piece.id}
             rotation={piece.rotation}
-            groupRef={groupRef}
           />
         ))}
       </group>
@@ -672,84 +693,96 @@ export default function RubiksCube() {
             {/* Front and Back */}
             <div className="flex gap-2 mb-2">
               <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).rotateFace?.('front', true)}
                 className="px-3 py-2 bg-red-500 text-white rounded text-xs hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                F&apos;
+              </button>
+              <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                onClick={() => (window as any).rotateFace?.('front', false)}
+                className="px-3 py-2 bg-red-700 text-white rounded text-xs hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 F
               </button>
               <button
-                onClick={() => (window as any).rotateFace?.('front', false)}
-                className="px-3 py-2 bg-red-700 text-white rounded text-xs hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                F'
-              </button>
-              <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).rotateFace?.('back', true)}
                 className="px-3 py-2 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                B
+                B&apos;
               </button>
               <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).rotateFace?.('back', false)}
                 className="px-3 py-2 bg-orange-700 text-white rounded text-xs hover:bg-orange-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                B'
+                B
               </button>
             </div>
             
             {/* Right and Left */}
             <div className="flex gap-2 mb-2">
               <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).rotateFace?.('right', true)}
                 className="px-3 py-2 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                R&apos;
+              </button>
+              <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                onClick={() => (window as any).rotateFace?.('right', false)}
+                className="px-3 py-2 bg-blue-700 text-white rounded text-xs hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 R
               </button>
               <button
-                onClick={() => (window as any).rotateFace?.('right', false)}
-                className="px-3 py-2 bg-blue-700 text-white rounded text-xs hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                R'
-              </button>
-              <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).rotateFace?.('left', true)}
                 className="px-3 py-2 bg-green-500 text-white rounded text-xs hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                L
+                L&apos;
               </button>
               <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).rotateFace?.('left', false)}
                 className="px-3 py-2 bg-green-700 text-white rounded text-xs hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                L'
+                L
               </button>
             </div>
             
             {/* Top and Bottom */}
             <div className="flex gap-2 mb-3">
               <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).rotateFace?.('top', true)}
                 className="px-3 py-2 bg-yellow-500 text-black rounded text-xs hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                U&apos;
+              </button>
+              <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                onClick={() => (window as any).rotateFace?.('top', false)}
+                className="px-3 py-2 bg-yellow-700 text-white rounded text-xs hover:bg-yellow-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 U
               </button>
               <button
-                onClick={() => (window as any).rotateFace?.('top', false)}
-                className="px-3 py-2 bg-yellow-700 text-white rounded text-xs hover:bg-yellow-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                U'
-              </button>
-              <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).rotateFace?.('bottom', true)}
                 className="px-3 py-2 bg-white text-black rounded text-xs hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border"
               >
-                D
+                D&apos;
               </button>
               <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).rotateFace?.('bottom', false)}
                 className="px-3 py-2 bg-gray-300 text-black rounded text-xs hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                D'
+                D
               </button>
             </div>
           </div>
@@ -758,18 +791,21 @@ export default function RubiksCube() {
           <div className="border-t border-gray-600 pt-3">
             <div className="flex flex-wrap gap-2">
               <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).shuffleCube?.()}
                 className="px-4 py-2 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Shuffle
               </button>
               <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).stopShuffle?.()}
                 className="px-4 py-2 bg-orange-600 text-white rounded text-sm hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Stop
               </button>
               <button
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => (window as any).resetCube?.()}
                 className="px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
